@@ -8,3 +8,10 @@ services:
     container_name: flutter-task-manager-web
     ports:
       - "${APP_PORT:-8080}:80"
+    networks:
+      - portfolio_suite_network
+
+networks:
+  portfolio_suite_network:
+    external: true
+    name: portfolio_suite_network
