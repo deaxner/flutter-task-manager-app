@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_task_manager_app/models/project.dart';
 import 'package:flutter_task_manager_app/models/task.dart';
+import 'package:flutter_task_manager_app/models/time_entry.dart';
 import 'package:flutter_task_manager_app/screens/dashboard_screen.dart';
 import 'package:flutter_task_manager_app/screens/login_screen.dart';
 import 'package:flutter_task_manager_app/services/api_service.dart';
@@ -25,9 +27,12 @@ class _TaskFlowAppState extends State<TaskFlowApp> {
   bool _tasksLoading = false;
   String? _authError;
   String? _taskError;
+  String _projectFilter = '';
   String _statusFilter = '';
   String _priorityFilter = '';
+  List<Project> _projects = <Project>[];
   List<Task> _tasks = <Task>[];
+  List<TimeEntry> _timeEntries = <TimeEntry>[];
 
   @override
   void initState() {
@@ -88,14 +93,19 @@ class _TaskFlowAppState extends State<TaskFlowApp> {
     });
 
     try {
+      final List<Project> projects = await _apiService.fetchProjects();
       final List<Task> tasks = await _apiService.fetchTasks(
+        projectId: int.tryParse(_projectFilter),
         status: _statusFilter,
         priority: _priorityFilter,
         search: _searchController.text,
       );
+      final List<TimeEntry> timeEntries = await _apiService.fetchTimeEntries();
 
       setState(() {
+        _projects = projects;
         _tasks = tasks;
+        _timeEntries = timeEntries;
       });
     } on ApiException catch (error) {
       setState(() {
@@ -145,16 +155,91 @@ class _TaskFlowAppState extends State<TaskFlowApp> {
   Future<void> _logout() async {
     await _apiService.logout();
     setState(() {
+      _projects = <Project>[];
       _tasks = <Task>[];
+      _timeEntries = <TimeEntry>[];
       _authError = null;
       _taskError = null;
+      _projectFilter = '';
+      _statusFilter = '';
+      _priorityFilter = '';
+      _searchController.clear();
     });
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _startWork(Task task) async {
+    try {
+      await _apiService.createTimeEntry(<String, dynamic>{
+        'taskId': task.id,
+        'startedAt': DateTime.now().toIso8601String(),
+        'billable': true,
+        'notes': 'Started from board',
+      });
+      await _loadTasks();
+      _showSnack('Work timer started.');
+    } on ApiException catch (error) {
+      _showSnack(error.message);
+    }
+  }
+
+  Future<void> _stopWork(Task task) async {
+    final List<TimeEntry> taskEntries =
+        _timeEntries
+            .where((TimeEntry entry) => entry.taskId == task.id && entry.isOpen)
+            .toList()
+          ..sort(
+            (TimeEntry left, TimeEntry right) =>
+                right.startedAt.compareTo(left.startedAt),
+          );
+
+    if (taskEntries.isEmpty) {
+      _showSnack('No active timer found for this ticket.');
+      return;
+    }
+
+    final TimeEntry activeEntry = taskEntries.first;
+
+    try {
+      await _apiService.updateTimeEntry(activeEntry.id, <String, dynamic>{
+        'taskId': task.id,
+        'startedAt': activeEntry.startedAt.toIso8601String(),
+        'endedAt': DateTime.now().toIso8601String(),
+        'billable': activeEntry.billable,
+        'notes': activeEntry.notes,
+      });
+      await _loadTasks();
+      _showSnack('Work timer stopped.');
+    } on ApiException catch (error) {
+      _showSnack(error.message);
+    }
+  }
+
+  Future<void> _createManualTimeEntry(
+    Task task,
+    DateTime startedAt,
+    DateTime endedAt,
+    bool billable,
+    String? notes,
+  ) async {
+    try {
+      await _apiService.createTimeEntry(<String, dynamic>{
+        'taskId': task.id,
+        'startedAt': startedAt.toIso8601String(),
+        'endedAt': endedAt.toIso8601String(),
+        'billable': billable,
+        'notes': notes,
+      });
+      await _loadTasks();
+      _showSnack('Manual work log added.');
+    } on ApiException catch (error) {
+      _showSnack(error.message);
+    }
   }
 
   @override
@@ -190,41 +275,51 @@ class _TaskFlowAppState extends State<TaskFlowApp> {
       debugShowCheckedModeBanner: false,
       theme: theme,
       home: _booting
-          ? const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            )
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _apiService.isAuthenticated
-              ? DashboardScreen(
-                  tasks: _tasks,
-                  isLoading: _tasksLoading,
-                  errorMessage: _taskError,
-                  searchController: _searchController,
-                  selectedStatus: _statusFilter,
-                  selectedPriority: _priorityFilter,
-                  onSearchChanged: (_) => _loadTasks(),
-                  onStatusChanged: (String value) {
-                    setState(() {
-                      _statusFilter = value;
-                    });
-                    _loadTasks();
-                  },
-                  onPriorityChanged: (String value) {
-                    setState(() {
-                      _priorityFilter = value;
-                    });
-                    _loadTasks();
-                  },
-                  onRefresh: _loadTasks,
-                  onLogout: _logout,
-                  onCreateTask: _createTask,
-                  onUpdateTask: _updateTask,
-                  onDeleteTask: _deleteTask,
-                )
-              : LoginScreen(
-                  isLoading: _loginLoading,
-                  errorMessage: _authError,
-                  onLogin: _login,
-                ),
+          ? DashboardScreen(
+              projects: _projects,
+              tasks: _tasks,
+              timeEntries: _timeEntries,
+              isLoading: _tasksLoading,
+              errorMessage: _taskError,
+              searchController: _searchController,
+              selectedProjectId: _projectFilter,
+              selectedStatus: _statusFilter,
+              selectedPriority: _priorityFilter,
+              onSearchChanged: (_) => _loadTasks(),
+              onProjectChanged: (String value) {
+                setState(() {
+                  _projectFilter = value;
+                });
+                _loadTasks();
+              },
+              onStatusChanged: (String value) {
+                setState(() {
+                  _statusFilter = value;
+                });
+                _loadTasks();
+              },
+              onPriorityChanged: (String value) {
+                setState(() {
+                  _priorityFilter = value;
+                });
+                _loadTasks();
+              },
+              onRefresh: _loadTasks,
+              onLogout: _logout,
+              onCreateTask: _createTask,
+              onUpdateTask: _updateTask,
+              onDeleteTask: _deleteTask,
+              onStartWork: _startWork,
+              onStopWork: _stopWork,
+              onCreateManualTimeEntry: _createManualTimeEntry,
+            )
+          : LoginScreen(
+              isLoading: _loginLoading,
+              errorMessage: _authError,
+              onLogin: _login,
+            ),
     );
   }
 }

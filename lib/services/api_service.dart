@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter_task_manager_app/models/project.dart';
 import 'package:flutter_task_manager_app/models/task.dart';
+import 'package:flutter_task_manager_app/models/time_entry.dart';
 import 'package:flutter_task_manager_app/utils/constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,17 +31,11 @@ class ApiService {
     _token = prefs.getString(_tokenKey);
   }
 
-  Future<void> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<void> login({required String email, required String password}) async {
     final http.Response response = await _client.post(
       _uri('/login'),
       headers: _headers(),
-      body: jsonEncode(<String, dynamic>{
-        'email': email,
-        'password': password,
-      }),
+      body: jsonEncode(<String, dynamic>{'email': email, 'password': password}),
     );
 
     final Map<String, dynamic> payload = _decode(response);
@@ -47,8 +43,8 @@ class ApiService {
       throw ApiException(payload['message'] as String? ?? 'Login failed.');
     }
 
-    final String? token = (payload['data'] as Map<String, dynamic>?)?['token']
-        as String?;
+    final String? token =
+        (payload['data'] as Map<String, dynamic>?)?['token'] as String?;
     if (token == null || token.isEmpty) {
       throw ApiException('Login succeeded but no token was returned.');
     }
@@ -64,9 +60,29 @@ class ApiService {
     await prefs.remove(_tokenKey);
   }
 
+  Future<List<Project>> fetchProjects() async {
+    final http.Response response = await _client.get(
+      _uri('/projects'),
+      headers: _headers(includeAuth: true),
+    );
+
+    final Map<String, dynamic> payload = _decode(response);
+    if (response.statusCode != 200) {
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to fetch projects.',
+      );
+    }
+
+    final List<dynamic> data = payload['data'] as List<dynamic>? ?? <dynamic>[];
+    return data
+        .map((dynamic item) => Project.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<Task>> fetchTasks({
     String? status,
     String? priority,
+    int? projectId,
     String? search,
   }) async {
     final Map<String, dynamic> query = <String, dynamic>{
@@ -76,6 +92,7 @@ class ApiService {
       'direction': 'desc',
       if (status != null && status.isNotEmpty) 'status': status,
       if (priority != null && priority.isNotEmpty) 'priority': priority,
+      if (projectId != null) 'projectId': projectId,
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
     };
 
@@ -86,7 +103,9 @@ class ApiService {
 
     final Map<String, dynamic> payload = _decode(response);
     if (response.statusCode != 200) {
-      throw ApiException(payload['message'] as String? ?? 'Unable to fetch tasks.');
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to fetch tasks.',
+      );
     }
 
     final List<dynamic> data = payload['data'] as List<dynamic>? ?? <dynamic>[];
@@ -104,7 +123,9 @@ class ApiService {
 
     final Map<String, dynamic> payload = _decode(response);
     if (response.statusCode != 201) {
-      throw ApiException(payload['message'] as String? ?? 'Unable to create task.');
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to create task.',
+      );
     }
 
     return Task.fromJson(payload['data'] as Map<String, dynamic>);
@@ -119,10 +140,68 @@ class ApiService {
 
     final Map<String, dynamic> payload = _decode(response);
     if (response.statusCode != 200) {
-      throw ApiException(payload['message'] as String? ?? 'Unable to update task.');
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to update task.',
+      );
     }
 
     return Task.fromJson(payload['data'] as Map<String, dynamic>);
+  }
+
+  Future<List<TimeEntry>> fetchTimeEntries({int? taskId}) async {
+    final http.Response response = await _client.get(
+      _uri('/time-entries', {if (taskId != null) 'taskId': taskId}),
+      headers: _headers(includeAuth: true),
+    );
+
+    final Map<String, dynamic> payload = _decode(response);
+    if (response.statusCode != 200) {
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to fetch time entries.',
+      );
+    }
+
+    final List<dynamic> data = payload['data'] as List<dynamic>? ?? <dynamic>[];
+    return data
+        .map((dynamic item) => TimeEntry.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<TimeEntry> createTimeEntry(Map<String, dynamic> payloadBody) async {
+    final http.Response response = await _client.post(
+      _uri('/time-entries'),
+      headers: _headers(includeAuth: true),
+      body: jsonEncode(payloadBody),
+    );
+
+    final Map<String, dynamic> payload = _decode(response);
+    if (response.statusCode != 201) {
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to create time entry.',
+      );
+    }
+
+    return TimeEntry.fromJson(payload['data'] as Map<String, dynamic>);
+  }
+
+  Future<TimeEntry> updateTimeEntry(
+    int id,
+    Map<String, dynamic> payloadBody,
+  ) async {
+    final http.Response response = await _client.put(
+      _uri('/time-entries/$id'),
+      headers: _headers(includeAuth: true),
+      body: jsonEncode(payloadBody),
+    );
+
+    final Map<String, dynamic> payload = _decode(response);
+    if (response.statusCode != 200) {
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to update time entry.',
+      );
+    }
+
+    return TimeEntry.fromJson(payload['data'] as Map<String, dynamic>);
   }
 
   Future<void> deleteTask(int id) async {
@@ -133,7 +212,9 @@ class ApiService {
 
     if (response.statusCode != 200) {
       final Map<String, dynamic> payload = _decode(response);
-      throw ApiException(payload['message'] as String? ?? 'Unable to delete task.');
+      throw ApiException(
+        payload['message'] as String? ?? 'Unable to delete task.',
+      );
     }
   }
 

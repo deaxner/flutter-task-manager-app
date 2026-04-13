@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  static const String appName = 'TaskFlow Mobile';
+  static const String appName = 'TaskFlow Board';
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'http://localhost:8002/api',
@@ -13,14 +13,10 @@ class AppConstants {
     'done',
   ];
 
-  static const List<String> taskPriorities = <String>[
-    'low',
-    'medium',
-    'high',
-  ];
+  static const List<String> taskPriorities = <String>['low', 'medium', 'high'];
 
   static const Color primaryColor = Color(0xFF0F172A);
-  static const Color accentColor = Color(0xFF14B8A6);
-  static const Color surfaceColor = Color(0xFFF8FAFC);
-  static const double maxContentWidth = 720;
+  static const Color accentColor = Color(0xFF57B6FF);
+  static const Color surfaceColor = Color(0xFFF3F6FC);
+  static const double maxContentWidth = 1320;
 }
